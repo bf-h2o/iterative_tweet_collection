@@ -1,0 +1,180 @@
+---
+title: "Tweet_analysis"
+output: html_notebook
+---
+
+```{r}
+#rm(list = ls())
+
+# initialize twitter API access
+
+library(rtweet)
+library(tidyverse)
+
+#library(wordcloud)
+#library(tm)
+
+
+key = "XXXXXXXXXX"
+secret = "XXXXXXXXXX"
+
+access_token = "XXXXXXXXXX"
+access_secret = "XXXXXXXXXX"
+
+appname = "XXXXXXXXXX"
+
+twitter_token <- create_token(
+  app = appname,
+  consumer_key = key,
+  consumer_secret = secret,
+  access_token = access_token,
+  access_secret = access_secret)
+
+```
+
+# retreive approx 120000 tweets up to 9 days old containing #myhashtag or keywords. The usual method to save the tweets such as save_as_csv tend to eliminate the internal structure of the tibble and render the retrival of geohgraphic information difficult. Better to save as an R object and load it later.
+
+# to request higher number of tweets, use an iterative method
+
+```{r one-go collection}
+
+# specify project name
+small_proj_name = "my_project"
+
+rstats_tweets <- search_tweets(q = "my_keyword",
+                               n = 120000,
+                               #lang = "en",
+                               include_rts = FALSE,
+                               retryonratelimit = TRUE,
+                               type = "mixed")
+
+save(list = c("rstats_tweets"), file = paste(small_proj_name,"-1.RData", sep = ""))
+
+rm(rstats_tweets)
+
+```
+
+# load tweet data, extract georaphic coordinates and plot them on a map
+```{r plot small collection}
+
+# load rstats_tweets object
+load(paste(small_proj_name,"-1.RData", sep = ""))
+
+# extract coordinates
+lat_list_proj = rstats_tweets %>% lat_lng(coords = c("coords_coords", "bbox_coords", "geo_coords")) %>% select(created_at,lng,lat)
+
+plot_map_proj <- lat_list_dtp %>% filter(!is.na(lat)) %>%
+  ggplot(aes(x = lng, y = lat)) +
+  borders("world", colour = "white", fill = "gray90", size = .2) +
+  theme_map()+
+  geom_point(alpha = 0.2, size = 1, color = "#193A4E")+
+  labs(title = paste("tweets",Sys.Date(), sep = ""))
+
+
+plot_map_proj
+
+png(file = paste(small_proj_name,".png"), res = 200, width = 1000, height = 800)
+plot_map_proj
+dev.off()
+
+```
+
+
+
+#The twitter API limit tweet collect to 18000/15 min, lauching request for millions of tweets is not indicated as an interuption of the connection might derail the whole process. Here the code takes advantage of the max_id argument to search tweet older than the oldest tweet from the previous request. At each iteration, approx 18000 tweets are selected and saved in separate RData files.
+
+#The names of the collected files are stored in a master file for easy subsequent loading.
+
+```{r itarative tweet collection}
+
+# give the project a name
+proj_name = "test_project"
+
+# the Id of the most recent tweet can be manually updated, otherwise, leave NA
+# the number of itertion is set by max_iter
+data_file_names = list()
+max_id = NA
+max_iter = 4
+
+for (i in c(1:max_iter)){
+  
+  list_tweet <- search_tweets(q = 'my_keyword',
+                               n = 18000,
+                               #lang = "en",
+                               include_rts = FALSE,
+                               retryonratelimit = TRUE,
+                               type = "recent",
+                               max_id = max_id)
+  
+  max_id = list_tweet$status_id  %>% sort(decreasing = F) %>% head(1) %>% as.character()
+
+  save(list_tweet, file = paste(proj_name,"-tweets-",i,".RData", sep = ""))
+  
+  data_file_names[[i]] = paste(proj_name,"-tweets-",i,".RData", sep = "")
+  
+} 
+
+write.csv(unlist(data_file_names), file = paste("master_file-",proj_name,"-",Sys.Date(),".csv", sep ="" ))
+
+getwd()
+
+```
+
+
+# sequentially load the data 
+# to plot the geographic coordinates of tweets
+# typically less than 10% of the tweets have associated geographic coordinates
+
+setwd("~/Desktop")
+
+```{r plot collected tweets}
+
+# reload the data and collect in one list
+list_of_tweet_file = read.csv("master_file-test_project-2020-06-15.csv", header = T) %>% select(x) 
+
+my_tweets = list()
+
+for (i in c(1:nrow(list_of_tweet_file))){
+  
+  p = as.character(list_of_tweet_file[i,1])
+  
+  load(p)
+  
+  my_tweets[[i]] = list_tweet
+  rm(list_tweet)
+  
+}
+
+my_tweets = do.call(rbind, my_tweets)
+
+# libraries for geographic representation
+library(mapproj)
+library(maps)
+library(ggthemes)
+
+# extract coordinates, eliminate tweets without coordinates and plot location
+
+plot_map <- my_tweets %>% lat_lng() %>% select(lat,lng) %>% drop_na() %>%
+  ggplot(aes(x = lng, y = lat))+
+  borders("world", colour = "white", fill = "gray90", size = .2) +
+  theme_map()+
+  geom_point(alpha = .9, size = 1, color = "#B99364")+
+  labs(title = paste("tweets",Sys.Date(), sep = ""))
+
+plot_map
+
+```
+
+
+```{r}
+png(file = paste(proj_name,"-",Sys.Date(),"-plot_map.png", sep = ""), res = 200, width = 1000, height = 800)
+plot_map
+dev.off()
+```
+
+
+
+
+
+
+
