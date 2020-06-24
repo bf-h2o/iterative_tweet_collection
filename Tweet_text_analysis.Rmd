@@ -1,0 +1,86 @@
+---
+title: "Tweet_text_analysis"
+output: html_notebook
+---
+
+# To load a single file
+```{r}
+small_proj_name = "my_project"
+
+# load rstats_tweets object
+load(paste(small_proj_name,"-1.RData", sep = ""))
+
+my_tweets = rstats_tweets
+
+rm(rstats_tweets)
+
+head(my_tweets)
+```
+
+# To load multiple files from a project
+```{r}
+
+# reload the data and collect in one list, specify here the name of the master file
+
+master_file = "master_file-test_project-2020-06-15.csv"
+
+list_of_tweet_file = read.csv(master_file, header = T) %>% select(x) 
+
+my_tweets = list()
+
+for (i in c(1:nrow(list_of_tweet_file))){
+  
+  p = as.character(list_of_tweet_file[i,1])
+  
+  load(p)
+  
+  my_tweets[[i]] = list_tweet
+  rm(list_tweet)
+  
+}
+
+my_tweets = do.call(rbind, my_tweets)
+
+head(my_tweets)
+
+```
+
+```{r}
+
+my_tweets <- my_tweets %>% mutate(doc_id = status_id, text =my_tweets$text)
+head(my_tweets)
+
+library(tidytext)
+
+word_freq <- my_tweets %>% 
+  unnest_tokens(output=word, 
+                input="text", 
+                token="words", 
+                format="text") %>% count(word)
+
+
+word_freq %>% top_n(40,n) %>%
+          ggplot(aes(x = reorder(word,n), y = n))+
+          geom_point()+
+          coord_flip()+
+          theme_minimal()
+
+```
+
+```{r}
+library(tm)
+
+source_df <- DataframeSource(my_tweets)
+corpus_df <- VCorpus(source_df)
+
+my_TDM <- TermDocumentMatrix(corpus_df)
+my_TDM <- as.matrix(my_TDM)
+
+findAssocs(my_TDM, c("erkek","kadin"), c(0.2, 0.2))
+
+
+```
+
+
+
+

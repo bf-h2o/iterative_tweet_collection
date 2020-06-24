@@ -40,9 +40,10 @@ twitter_token <- create_token(
 
 # specify project name
 small_proj_name = "my_project"
+my_keyword = "my_keyword"
 
-rstats_tweets <- search_tweets(q = "my_keyword",
-                               n = 120000,
+rstats_tweets <- search_tweets(q = my_keyword,
+                               n = 18000,
                                #lang = "en",
                                include_rts = FALSE,
                                retryonratelimit = TRUE,
@@ -63,12 +64,17 @@ load(paste(small_proj_name,"-1.RData", sep = ""))
 # extract coordinates
 lat_list_proj = rstats_tweets %>% lat_lng(coords = c("coords_coords", "bbox_coords", "geo_coords")) %>% select(created_at,lng,lat)
 
-plot_map_proj <- lat_list_dtp %>% filter(!is.na(lat)) %>%
+# libraries for geographic representation
+library(maps)
+library(mapproj)
+library(ggthemes)
+
+plot_map_proj <- lat_list_proj %>% filter(!is.na(lat)) %>%
   ggplot(aes(x = lng, y = lat)) +
   borders("world", colour = "white", fill = "gray90", size = .2) +
   theme_map()+
   geom_point(alpha = 0.2, size = 1, color = "#193A4E")+
-  labs(title = paste("tweets",Sys.Date(), sep = ""))
+  labs(title = paste("tweets ",Sys.Date(), sep = ""))
 
 
 plot_map_proj
@@ -129,8 +135,10 @@ setwd("~/Desktop")
 
 ```{r plot collected tweets}
 
-# reload the data and collect in one list
-list_of_tweet_file = read.csv("master_file-test_project-2020-06-15.csv", header = T) %>% select(x) 
+
+master_file = "master_file-test_project-2020-06-15.csv"
+
+list_of_tweet_file = read.csv(master_file, header = T) %>% select(x) 
 
 my_tweets = list()
 
