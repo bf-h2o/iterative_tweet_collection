@@ -22,9 +22,11 @@ head(my_tweets)
 
 # reload the data and collect in one list, specify here the name of the master file
 
+setwd("/Users/benoitfalquet/Project/02_extension_of_rights")
+
 master_file = "master_file-test_project-2020-06-15.csv"
 
-list_of_tweet_file = read.csv(master_file, header = T) %>% select(x) 
+list_of_tweet_file = read.csv("/Users/benoitfalquet/Project/02_extension_of_rights/master_file-test_project-2020-06-15.csv", header = T) %>% select(x) 
 
 my_tweets = list()
 
@@ -43,12 +45,16 @@ my_tweets = do.call(rbind, my_tweets)
 
 head(my_tweets)
 
+
 ```
 
-```{r}
+```{r raw word frequency}
 
 my_tweets <- my_tweets %>% mutate(doc_id = status_id, text =my_tweets$text)
 head(my_tweets)
+
+
+removeWords()
 
 library(tidytext)
 
@@ -67,20 +73,128 @@ word_freq %>% top_n(40,n) %>%
 
 ```
 
-```{r}
-library(tm)
+```{r clean word frequency}
 
-source_df <- DataframeSource(my_tweets)
+
+# make corpus
+# clean the text (put everything to lower case, replace curly ', remove stopwords, remove punctuation, remove again stopwords after punctuation removal  )
+# create a TDM, eliminate rare words
+# measure words frequency and plot
+
+library(tm)
+library(qdap)
+
+my_tweets_corpus <- data_frame(doc_id = my_tweets$status_id, text =my_tweets$text)
+
+source_df <- DataframeSource(my_tweets_corpus)
 corpus_df <- VCorpus(source_df)
+#rm(source_df)
+
+corpus_df <- corpus_df %>%  tm_map(content_transformer(tolower)) %>%
+                            tm_map(content_transformer(function(x) gsub(x, pattern = "’", replacement = "'"))) %>%
+                            tm_map(removeWords, c(stopwords("en"))) %>%
+                            tm_map(removePunctuation) %>%
+                            tm_map(removeWords, c(stopwords("en")))
 
 my_TDM <- TermDocumentMatrix(corpus_df)
-my_TDM <- as.matrix(my_TDM)
 
-findAssocs(my_TDM, c("erkek","kadin"), c(0.2, 0.2))
+# If the sparse terms are not removed before the transformation to matrix, the memory of the computer might be insufficient.
+my_TDM_r <- removeSparseTerms(my_TDM, sparse = 0.98)
+freq <- rowSums(as.matrix(my_TDM_r)) %>% 
+        as.data.frame()  %>% 
+        rownames_to_column() %>% 
+        rename(c(freq_word = . , word = rowname))
+
+freq %>%  ggplot(aes(x = reorder(word,freq_word), y = freq_word))+
+          geom_point()+
+          coord_flip()+
+          theme_minimal()
+
+```
+
+```{r word association}
+
+# search for word associated with selected words ("my_termes")
+my_termes = c("black","police")
+
+# find associated words. This can take a couple of minutes
+word_assoc <- findAssocs(my_TDM, my_termes, c(0.1, 0.1))
+head(word_assoc)
+
+word_assoc_vec <- list_vect2df(word_assoc, col2 = "word", col3 = "assoc") %>% rename(term = X1)
+
+plot_feq <-   word_assoc_vec %>%  
+              group_by(term) %>% 
+              arrange(assoc, .by_group = T) %>% 
+              slice(1:20) %>% 
+              ggplot(aes(x = word, y = assoc, color = term))+
+              geom_point()+
+              coord_flip()+
+              theme_minimal()
+
+plot_feq
+
+
+# plot the graph and the wordcloud of the word most commonly associated with "my_termes"
+
+library(ggwordcloud)
+library(gridExtra)
+
+plot_cloud = list()
+j = 1
+
+for (i in my_termes){
+  
+  x = word_assoc_vec %>% filter(term == i)
+  
+  
+  plot_cloud[[j]] <- x %>% arrange(desc(assoc)) %>% 
+              slice(1:10) %>% 
+              ggplot(aes(x = word, y = assoc, color = term))+
+              geom_point()+
+              coord_flip()+
+              theme_minimal()
+  
+  j = j + 1
+  
+  
+  plot_cloud[[j]]  <- ggplot(x, aes(label = word, size = assoc))+
+                  geom_text_wordcloud(eccentricity = 1)+
+                  theme_minimal()
+  
+  j = j + 1
+  
+}
+
+grid.arrange(grobs = plot_cloud, ncol = 2)
+
+
+#Each plot can be treated independently
+#plot_cloud[[1]] + scale_y_continuous(limits = c(0,1))
 
 
 ```
 
+```{r LDA topic modeling}
 
+# LDA 
+my_DTM <- DocumentTermMatrix(corpus_df)
+
+# If the sparse terms are not removed before the transformation to matrix, the memory of the computer might be insufficient.
+my_DTM_r <- removeSparseTerms(my_DTM, sparse = 0.98)
+glimpse(my_DTM_r)
+
+# remove documents without entries
+rowTotals = apply(my_DTM_r , 1, sum)
+my_DTM_r = my_DTM_r[rowTotals> 0, ]
+
+library(topicmodels)
+mod <- LDA(x=my_DTM_r, k=3, method="Gibbs", control=list(alpha=1, delta=0.1, seed=10005))
+
+tidy(mod, matrix="beta") %>% ggplot(aes(x = term, y = beta, color = as.factor(topic)))+geom_point()+coord_flip()
+
+terms(mod, k = 5)
+
+```
 
 
