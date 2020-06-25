@@ -87,10 +87,10 @@ library(qdap)
 my_tweets_corpus <- data_frame(doc_id = my_tweets$status_id, text =my_tweets$text)
 
 source_df <- DataframeSource(my_tweets_corpus)
-corpus_df <- VCorpus(source_df)
-#rm(source_df)
+corpus_df_init <- VCorpus(source_df)
+rm(source_df)
 
-corpus_df <- corpus_df %>%  tm_map(content_transformer(tolower)) %>%
+corpus_df <- corpus_df_init %>%  tm_map(content_transformer(tolower)) %>%
                             tm_map(content_transformer(function(x) gsub(x, pattern = "’", replacement = "'"))) %>%
                             tm_map(removeWords, c(stopwords("en"))) %>%
                             tm_map(removePunctuation) %>%
@@ -151,8 +151,9 @@ for (i in my_termes){
   plot_cloud[[j]] <- x %>% arrange(desc(assoc)) %>% 
               slice(1:10) %>% 
               ggplot(aes(x = word, y = assoc, color = term))+
-              geom_point()+
+              geom_point(show.legend = FALSE)+
               coord_flip()+
+              labs(title = as.character(i))+
               theme_minimal()
   
   j = j + 1
@@ -169,7 +170,7 @@ for (i in my_termes){
 grid.arrange(grobs = plot_cloud, ncol = 2)
 
 
-#Each plot can be treated independently
+#Each plot can be treated independently. Example:
 #plot_cloud[[1]] + scale_y_continuous(limits = c(0,1))
 
 
@@ -197,21 +198,25 @@ terms(mod, k = 5)
 
 ```
 
+
+# Bigrams are less frequent
+
 ```{r analysis bigram}
 
 # function for bigrams
-install.packages("RWeka")
+#install.packages("RWeka")
 library(RWeka)
 
 tokenizer <- function(x) {
   NGramTokenizer(x, Weka_control(min = 2, max = 2))
 }
 
-my_TDM_bi <- TermDocumentMatrix(corpus_df, control = list(tokenize = tokenizer))
+
+# Shouldn't remove the stopwords before making bigrams or risk spurious associations
+my_TDM_bi <- TermDocumentMatrix(corpus_df_init, control = list(tokenize = tokenizer))
 glimpse(my_TDM_bi)
 
 # If the sparse terms are not removed before the transformation to matrix, the memory of the computer might be insufficient. keep a high sparse factor for bigram or most of it will be eliminated.
-
 my_TDM_bi_r <- removeSparseTerms(my_TDM_bi, sparse = 0.998)
 
 freq_bi <- rowSums(as.matrix(my_TDM_bi_r)) %>% 
@@ -219,7 +224,14 @@ freq_bi <- rowSums(as.matrix(my_TDM_bi_r)) %>%
         rownames_to_column() %>% 
         rename(c(freq_word = . , word = rowname))
 
-freq_bi %>% arrange(desc(freq_word)) %>% 
+
+# eliminate bigrams containing frequent words
+freq_bi_sep <- freq_bi %>% separate(col = word,into = c("word_1","word_2"), sep = " ", remove = FALSE)
+
+# stop_words contains frequent english words. 
+freq_bi_clean <- freq_bi_sep %>% anti_join(stop_words, by = c("word_1" = "word")) %>% anti_join(stop_words, by = c("word_2" = "word")) 
+
+freq_bi_clean %>% arrange(desc(freq_word)) %>% 
           slice(1:40) %>%
           ggplot(aes(x = reorder(word,freq_word), y = freq_word))+
           geom_point()+
@@ -228,6 +240,27 @@ freq_bi %>% arrange(desc(freq_word)) %>%
 
 ```
 
+```{r}
+# search for bigrams associated with selected bigrams ("my_termes_bi")
+my_termes_bi = c("black lives", "police brutality")
+
+# find associated words. This can take a couple of minutes
+word_assoc_bi <- findAssocs(my_TDM_bi_r, my_termes_bi, c(0.1, 0.1))
+head(word_assoc_bi)
+
+word_assoc_bi_vec <- list_vect2df(word_assoc_bi, col2 = "word", col3 = "assoc") %>% rename(term = X1)
+
+plot_feq <-   word_assoc_bi_vec %>%  
+              group_by(term) %>% 
+              arrange(assoc, .by_group = T) %>% 
+              slice(1:20) %>% 
+              ggplot(aes(x = word, y = assoc, color = term))+
+              geom_point()+
+              coord_flip()+
+              theme_minimal()
+
+plot_feq
+```
 
 
 
