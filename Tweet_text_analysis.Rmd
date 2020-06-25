@@ -184,7 +184,7 @@ my_DTM <- DocumentTermMatrix(corpus_df)
 my_DTM_r <- removeSparseTerms(my_DTM, sparse = 0.98)
 glimpse(my_DTM_r)
 
-# remove documents without entries
+# remove documents without entries (required for LDA algorithm)
 rowTotals = apply(my_DTM_r , 1, sum)
 my_DTM_r = my_DTM_r[rowTotals> 0, ]
 
@@ -196,5 +196,42 @@ tidy(mod, matrix="beta") %>% ggplot(aes(x = term, y = beta, color = as.factor(to
 terms(mod, k = 5)
 
 ```
+
+```{r analysis bigram}
+
+# function for bigrams
+install.packages("RWeka")
+library(RWeka)
+
+tokenizer <- function(x) {
+  NGramTokenizer(x, Weka_control(min = 2, max = 2))
+}
+
+my_TDM_bi <- TermDocumentMatrix(corpus_df, control = list(tokenize = tokenizer))
+glimpse(my_TDM_bi)
+
+# If the sparse terms are not removed before the transformation to matrix, the memory of the computer might be insufficient. keep a high sparse factor for bigram or most of it will be eliminated.
+
+my_TDM_bi_r <- removeSparseTerms(my_TDM_bi, sparse = 0.998)
+
+freq_bi <- rowSums(as.matrix(my_TDM_bi_r)) %>% 
+        as.data.frame()  %>% 
+        rownames_to_column() %>% 
+        rename(c(freq_word = . , word = rowname))
+
+freq_bi %>% arrange(desc(freq_word)) %>% 
+          slice(1:40) %>%
+          ggplot(aes(x = reorder(word,freq_word), y = freq_word))+
+          geom_point()+
+          coord_flip()+
+          theme_minimal()
+
+```
+
+
+
+
+
+
 
 
