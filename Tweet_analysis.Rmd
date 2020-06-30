@@ -91,7 +91,7 @@ dev.off()
 
 #The names of the collected files are stored in a master file for easy subsequent loading.
 
-```{r itarative tweet collection}
+```{r iterative tweet collection}
 
 # give the project a name
 proj_name = "test_project"
@@ -173,7 +173,7 @@ plot_map
 
 ```
 
-
+Save image of the map
 ```{r}
 png(file = paste(proj_name,"-",Sys.Date(),"-plot_map.png", sep = ""), res = 200, width = 1000, height = 800)
 plot_map
