@@ -2,26 +2,46 @@
 title: "Tweet_analysis"
 output: html_notebook
 ---
+```{r load required libraries}
+
+# library for interaction with twitter API
+library(rtweet)
+
+# library for natural language processing
+library(tidyverse)
+library(tidytext)
+library(tm)
+library(qdap)
+
+# libraries for graphic representation
+library(mapproj)
+library(maps)
+library(ggthemes)
+library(ggwordcloud)
+library(gridExtra)
+
+# library for LDA model
+library(topicmodels)
+
+```
+
 
 ```{r}
-#rm(list = ls())
+
+# The script performs an iterative tweet collection based on keywords. 
+# The data are stored in RData files referenced in a master file.
+# Data are reloaded to perform geographic localization, word association and topic modeling 
 
 # initialize twitter API access
+access = read.csv("cred.csv", header = TRUE, stringsAsFactors = FALSE)
 
-library(rtweet)
-library(tidyverse)
+key = access$key
+secret = access$secret
 
-#library(wordcloud)
-#library(tm)
+access_token = access$access_token
+access_secret = access$access_secret
 
-
-key = "XXXXXXXXXX"
-secret = "XXXXXXXXXX"
-
-access_token = "XXXXXXXXXX"
-access_secret = "XXXXXXXXXX"
-
-appname = "XXXXXXXXXX"
+appname = access$appname
 
 twitter_token <- create_token(
   app = appname,
@@ -30,84 +50,35 @@ twitter_token <- create_token(
   access_token = access_token,
   access_secret = access_secret)
 
-```
-
-# retreive approx 120000 tweets up to 9 days old containing #myhashtag or keywords. The usual method to save the tweets such as save_as_csv tend to eliminate the internal structure of the tibble and render the retrival of geohgraphic information difficult. Better to save as an R object and load it later.
-
-# to request higher number of tweets, use an iterative method
-
-```{r one-go collection}
-
-# specify project name
-small_proj_name = "my_project"
-my_keyword = "my_keyword"
-
-rstats_tweets <- search_tweets(q = my_keyword,
-                               n = 18000,
-                               #lang = "en",
-                               include_rts = FALSE,
-                               retryonratelimit = TRUE,
-                               type = "mixed")
-
-save(list = c("rstats_tweets"), file = paste(small_proj_name,"-1.RData", sep = ""))
-
-rm(rstats_tweets)
-
-```
-
-# load tweet data, extract georaphic coordinates and plot them on a map
-```{r plot small collection}
-
-# load rstats_tweets object
-load(paste(small_proj_name,"-1.RData", sep = ""))
-
-# extract coordinates
-lat_list_proj = rstats_tweets %>% lat_lng(coords = c("coords_coords", "bbox_coords", "geo_coords")) %>% select(created_at,lng,lat)
-
-# libraries for geographic representation
-library(maps)
-library(mapproj)
-library(ggthemes)
-
-plot_map_proj <- lat_list_proj %>% filter(!is.na(lat)) %>%
-  ggplot(aes(x = lng, y = lat)) +
-  borders("world", colour = "white", fill = "gray90", size = .2) +
-  theme_map()+
-  geom_point(alpha = 0.2, size = 1, color = "#193A4E")+
-  labs(title = paste("tweets ",Sys.Date(), sep = ""))
-
-
-plot_map_proj
-
-png(file = paste(small_proj_name,".png"), res = 200, width = 1000, height = 800)
-plot_map_proj
-dev.off()
+rm(key, secret, access_token, access_secret, appname)
 
 ```
 
 
-
-#The twitter API limit tweet collect to 18000/15 min, lauching request for millions of tweets is not indicated as an interuption of the connection might derail the whole process. Here the code takes advantage of the max_id argument to search tweet older than the oldest tweet from the previous request. At each iteration, approx 18000 tweets are selected and saved in separate RData files.
+```{r iterative tweet collection}
+#The twitter API limit tweet collect to 18000/15 min, launching request for millions of tweets is not indicated as an interruption of the connection might derail the whole process. Here the code takes advantage of the max_id argument to search tweet older than the oldest tweet from the previous request. At each iteration, approx 18000 tweets are selected and saved in separate RData files.
 
 #The names of the collected files are stored in a master file for easy subsequent loading.
 
-```{r iterative tweet collection}
-
 # give the project a name
-proj_name = "test_project"
+proj_name = "pharma_project"
 
 # the Id of the most recent tweet can be manually updated, otherwise, leave NA
-# the number of itertion is set by max_iter
+# the number of iteration is set by max_iter
 data_file_names = list()
 max_id = NA
 max_iter = 4
+my_keyword = "pharma"
+include_retweets = FALSE
+
+data_file_names[[1]] = paste("search terme:", my_keyword, " date :", Sys.Date(), " include_retweets:", include_retweets)
 
 for (i in c(1:max_iter)){
   
-  list_tweet <- search_tweets(q = 'my_keyword',
-                               n = 18000,
-                               #lang = "en",
-                               include_rts = FALSE,
+  list_tweet <- search_tweets(q = my_keyword,
+                               n = 18000, #18000,
+                               lang = "en",
+                               include_rts = include_retweets,
                                retryonratelimit = TRUE,
                                type = "recent",
                                max_id = max_id)
@@ -116,33 +87,31 @@ for (i in c(1:max_iter)){
 
   save(list_tweet, file = paste(proj_name,"-tweets-",i,".RData", sep = ""))
   
-  data_file_names[[i]] = paste(proj_name,"-tweets-",i,".RData", sep = "")
+  data_file_names[[i+1]] = paste(proj_name,"-tweets-",i,".RData", sep = "")
   
 } 
 
-write.csv(unlist(data_file_names), file = paste("master_file-",proj_name,"-",Sys.Date(),".csv", sep ="" ))
+tweets_file = paste("master_file-",proj_name,"-",Sys.Date(),".csv", sep ="" )
 
-getwd()
+write.csv(unlist(data_file_names), file = tweets_file)
+print(paste("file names saved in: ",  tweets_file))
+
+rm(twitter_token)
 
 ```
 
 
-# sequentially load the data 
-# to plot the geographic coordinates of tweets
-# typically less than 10% of the tweets have associated geographic coordinates
-
-setwd("~/Desktop")
 
 ```{r plot collected tweets}
 
-
-master_file = "master_file-test_project-2020-06-15.csv"
-
-list_of_tweet_file = read.csv(master_file, header = T) %>% select(x) 
+# sequentially load the data 
+# to plot the geographic coordinates of tweets
+# typically less than 10% of the tweets have associated geographic coordinates
+list_of_tweet_file = read.csv(tweets_file, header = T) %>% select(x) 
 
 my_tweets = list()
 
-for (i in c(1:nrow(list_of_tweet_file))){
+for (i in c(2:nrow(list_of_tweet_file))){
   
   p = as.character(list_of_tweet_file[i,1])
   
@@ -154,33 +123,302 @@ for (i in c(1:nrow(list_of_tweet_file))){
 }
 
 my_tweets = do.call(rbind, my_tweets)
-
-# libraries for geographic representation
-library(mapproj)
-library(maps)
-library(ggthemes)
+head(my_tweets)
 
 # extract coordinates, eliminate tweets without coordinates and plot location
-
+# WARNING generally, only 1% of the tweets have an associated geographic localisation
 plot_map <- my_tweets %>% lat_lng() %>% select(lat,lng) %>% drop_na() %>%
   ggplot(aes(x = lng, y = lat))+
   borders("world", colour = "white", fill = "gray90", size = .2) +
   theme_map()+
-  geom_point(alpha = .9, size = 1, color = "#B99364")+
-  labs(title = paste("tweets",Sys.Date(), sep = ""))
+  geom_point(alpha = .5, size = 1, color = "#B99364")+
+  labs(title = "tweets localisation", caption = paste(list_of_tweet_file[1, ], sep = ""), color = "topic")
 
 plot_map
 
 ```
 
-Save image of the map
+
 ```{r}
+
+# Save image of the map
+
 png(file = paste(proj_name,"-",Sys.Date(),"-plot_map.png", sep = ""), res = 200, width = 1000, height = 800)
 plot_map
 dev.off()
 ```
 
 
+
+```{r}
+# change column name to "doc_id" and "text", as required by text mining functions.
+my_tweets_txt <- my_tweets %>% mutate(doc_id = status_id, text =my_tweets$text)
+head(my_tweets_txt)
+```
+
+
+```{r raw word frequency}
+
+# calculate word frequency
+word_freq <- my_tweets_txt %>% 
+                unnest_tokens(output=word, 
+                input="text", 
+                token="words", 
+                format="text") %>% 
+                count(word)
+
+# rapid sanity check of words frequency. 
+word_freq %>% top_n(40,n) %>%
+          ggplot(aes(x = reorder(word,n), y = n))+
+          geom_point()+
+          labs(x = "word", y = "count")+
+          coord_flip()+
+          theme_minimal()
+
+```
+
+
+```{r clean word frequency}
+
+# make corpus
+# clean the corpus (put everything to lower case, replace curly ', remove stop words, remove punctuation, remove again stop words after punctuation removal)
+# stem words to aggregate similar termes
+# create a term-document matrix (TDM), eliminate rare words 
+# measure words frequency and plot
+
+# create corpus
+my_tweets_corpus <- data_frame(doc_id = my_tweets_txt$status_id, text =my_tweets_txt$text)
+
+# convert to VCopus type for subsequent analysis 
+source_df <- DataframeSource(my_tweets_corpus)
+corpus_df_init <- VCorpus(source_df)
+rm(source_df)
+
+# clean text and remove stop words
+corpus_df <-  corpus_df_init %>%  
+              tm_map(content_transformer(tolower)) %>%
+              tm_map(content_transformer(function(x) gsub(x, pattern = "’", replacement = "'"))) %>%
+                            tm_map(removeWords, c(stopwords("en"))) %>%
+                            tm_map(removePunctuation) %>%
+                            tm_map(removeWords, c(stopwords("en")))
+
+# Stem words to regroup words of the same family (ex: appoval, approving => approv)
+corpus_df_stem = tm_map(corpus_df, stemDocument)
+
+# create TDM: count of word in each element od the corpus (tweets)
+my_TDM <- TermDocumentMatrix(corpus_df_stem)
+
+# remove sparse termes to reduce memory footprint
+my_TDM_r <- removeSparseTerms(my_TDM, sparse = 0.98)
+freq <- rowSums(as.matrix(my_TDM_r)) %>% 
+        as.data.frame()  %>% 
+        rownames_to_column() %>% 
+        rename(c(freq_word = . , word = rowname))
+
+
+# reconstitute truncated words
+freq$word_comp = freq$word %>% stemCompletion(corpus_df, type = "prevalent")
+
+# plot frequent words
+freq %>%  ggplot(aes(x = reorder(word_comp,freq_word), y = freq_word))+
+          geom_point()+
+          coord_flip()+
+          labs(x = "", y = "word frequency")+
+          theme_minimal()+
+          labs(title = "words associated with \"pharma\"")
+
+```
+```{r}
+
+# display frequent words as a wordcloud
+freq %>% arrange(-freq_word) %>% slice_tail(n = nrow(freq)-1)%>%
+  
+  ggplot(aes(label = word_comp, size = freq_word, color = freq_word))+
+                  geom_text_wordcloud(eccentricity = 1)+
+                  theme_minimal()+
+                  labs(title = "words associated with \"pharma\"", caption = paste(list_of_tweet_file[1, ], sep = ""))
+
+```
+As expected, the "Big Pharma" expression made its way to twitter. With the word "big" being the most frequently associated with "pharma"
+
+```{r word association}
+
+# search for word associated with selected words ("my_termes") in the stemmed corpus
+# The goal is to gain more insight into the current news about some major pharma companies
+my_termes = c("pfizer","teva","moderna")
+
+# find associated words. This can take a couple of minutes
+word_assoc <- findAssocs(my_TDM, my_termes, 0.1)
+head(word_assoc)
+
+word_assoc_vec <- list_vect2df(word_assoc, col2 = "word", col3 = "assoc") %>% rename(term = X1)
+
+word_assoc_vec$word_comp = word_assoc_vec$word %>%
+                          stemCompletion(corpus_df, type = "prevalent")
+
+print(word_assoc_vec)
+
+
+```
+
+```{r}
+
+# plot the graph and the wordcloud of the word most commonly associated with "my_termes"
+
+plot_cloud = list()
+j = 1
+
+for (i in my_termes){
+  
+  x = word_assoc_vec %>% filter(term == i)
+  x_top_10 = x %>% arrange(desc(assoc)) %>% slice(1:7)
+  print(x_top_10)
+  
+  plot_cloud[[j]] <-  x_top_10 %>% 
+                      ggplot(aes(x = word_comp, y = assoc, color = assoc))+
+                      geom_point(show.legend = FALSE)+
+                      coord_flip()+
+                      labs(title = as.character(i))+
+                      xlab("")+
+                      ylab("word association")+
+                      theme_minimal()
+  
+  j = j + 1
+  
+  
+  plot_cloud[[j]]  <- x_top_10 %>% 
+                      ggplot(aes(label = word_comp, size = assoc, color = assoc))+
+                      geom_text_wordcloud(eccentricity = 10)+
+                      theme_minimal()
+  
+  j = j + 1
+  
+}
+
+grid.arrange(grobs = plot_cloud, ncol = 2)
+
+```
+At the time of the analysis, it was revealed that Pfizer leaked the private medical data of some prescription drug users. Teva announced its collaboration wih Onica for its digital health platform (digihaler). Moncef Slaoui, former Moderna Board Member, is planning to sell its shares, as the company is working on a covid-19 vaccine.
+
+
+```{r LDA topic modeling}
+# perform a topic modeling analysis using Latent Dirichlet Allocation
+# The goal is to observe if tweets can be classified into coherent topics.
+
+# prepare data as DTM
+my_DTM <- DocumentTermMatrix(corpus_df_stem)
+
+# If the sparse terms are not removed before the transformation to matrix, the memory of the computer might be insufficient.
+my_DTM_r <- removeSparseTerms(my_DTM, sparse = 0.98)
+glimpse(my_DTM_r)
+
+# remove documents without entries (required for LDA algorithm)
+rowTotals = apply(my_DTM_r , 1, sum)
+my_DTM_r = my_DTM_r[rowTotals> 0, ]
+glimpse(my_DTM_r)
+
+# perform modeling
+mod <- LDA(x=my_DTM_r, k=3, method="Gibbs", control=list(alpha=1, delta=0.1, seed=111))
+
+# extract the beta matrix 
+LDA_res = tidy(mod, matrix="beta")
+
+# reconstitute stemmed words
+LDA_res$term_comp = LDA_res$term %>% stemCompletion(corpus_df, type = "prevalent")
+
+
+# plot a wordcloud of the most representative words of each topics
+LDA_res %>% ggplot(aes(label = term_comp, size = beta, color = topic)) +
+            geom_text_wordcloud(eccentricity = 10)+
+            theme_minimal()+
+            facet_wrap(.~topic, ncol = 2)
+
+```
+
+If the tweets are distributed in 3 topics, the first one seems focused on the industry (keywords: health, company, medic, drug, market), the second one the opioid crisis (keywords: purdu, oxycontin, criminal, opioid, charges) and the third one revolves around the covid-19 crisis (keywords: vaccine, people, covid19, money, Trump)
+
+```{r}
+# perform sentiment analysis on words representative of different topics
+
+# load sentiment lexicon
+library(textdata)
+lex_sent = get_sentiments("afinn")
+lex_sent$stem = lex_sent$word %>% stemDocument()
+
+
+left_join(LDA_res, lex_sent, by = c("term" = "stem")) %>% 
+  mutate(score = beta *value) %>% 
+  group_by(topic) %>% 
+  summarize(sentiment = sum(score, na.rm = TRUE)) %>% 
+  ggplot(aes(x = topic, y = sentiment))+
+  geom_col(fill = "lightgrey")+
+  theme_minimal()+
+  coord_fixed(ratio = .5)
+
+
+```
+Topics 1 and 3 have a rather positive connotation, while topic 2 is, on average, associated with negative terms.
+
+```{r}
+# display tweets topic in function of geographic coordinates
+
+# identify tweets with available geographic coordinates
+NA_loc = my_tweets %>% lat_lng() %>% select(lat,lng) %>% is.na()
+NA_loc_tot = !NA_loc[,1] & !NA_loc[,2] 
+topics_loc = topics(mod)[NA_loc_tot]
+
+# mark tweets localization with one color/topic
+plot_map_topics = my_tweets %>%
+  lat_lng() %>%
+  select(lat, lng) %>%
+  drop_na %>%
+  mutate(topics_loc = topics_loc) %>%
+  ggplot(aes(
+    x = lng,
+    y = lat,
+    color = as.factor(topics_loc)
+  )) +
+  borders("world",
+          colour = "black",
+          fill = "gray90",
+          size = .2) +
+  theme_map() +
+  geom_point(alpha = 1) +
+  theme(legend.position = "top") +
+  scale_color_economist() +
+  labs(title = "tweets localisation", caption = paste(list_of_tweet_file[1, ], sep = ""), color = "topic")
+
+plot_map_topics
+
+```
+
+```{r}
+# display tweets topic in function of geographic coordinates in the US
+
+my_tweets %>%
+  lat_lng() %>%
+  select(lat, lng) %>%
+  drop_na %>%
+  mutate(topics_loc = topics_loc) %>%
+  ggplot(aes(
+    x = lng,
+    y = lat,
+    color = as.factor(topics_loc)
+  )) +
+  borders("state",
+          colour = "black",
+          fill = "gray90",
+          size = .2) +
+  coord_map(ylim = c(20,50), xlim = c(-70,-130))+
+  theme_map() +
+  geom_point(alpha = 1) +
+  theme(legend.position = "top") +
+  scale_color_economist() +
+  labs(title = "tweets localisation", caption = paste(list_of_tweet_file[1, ], sep = ""), color = "topic")
+
+
+
+```
 
 
 
